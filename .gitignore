@@ -1,0 +1,10 @@
+*.swp
+
+*.o
+*.so
+
+examples/nondeterminism_finder/nondeterminism-clang
+examples/nondeterminism_finder/nondeterminism-clang++
+examples/nondeterminism_finder/nondeterminism-ld
+examples/nondeterminism_finder/nondeterminism-tracker
+examples/nondeterminism_finder/samples/use_random
