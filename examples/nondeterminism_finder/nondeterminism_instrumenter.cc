@@ -6,7 +6,7 @@
 
 using llvm::Module;
 using llvm::Type;
-using llvm::FunctionPass;
+using llvm::ModulePass;
 using llvm::Function;
 using llvm::checkSanitizerInterfaceFunction;
 using llvm::BasicBlock;
@@ -21,14 +21,15 @@ using llvm::legacy::PassManagerBase;
 
 static char NondeterminismPassID;
 namespace {
-	struct NondeterminismPass : public FunctionPass {
+	struct NondeterminismPass : public ModulePass {
 	private:
 		Function *callback;
 		bool doInitialization(Module &module);
-	public:
-		NondeterminismPass() : FunctionPass(NondeterminismPassID)
-		{}
 		bool runOnFunction(Function &function);
+	public:
+		NondeterminismPass() : ModulePass(NondeterminismPassID)
+		{}
+		bool runOnModule(Module &module);
 	};
 }
 
@@ -49,6 +50,17 @@ bool NondeterminismPass::runOnFunction(Function &function)
 		BasicBlock::iterator start = basic_block.getFirstInsertionPt();
 		IRBuilder<> block_instrumenter(&(*start));
 		block_instrumenter.CreateCall(callback, {});
+	}
+
+	return true;
+}
+
+bool NondeterminismPass::runOnModule(Module &module)
+{
+	doInitialization(module);
+
+	for (Function &function : module) {
+		runOnFunction(function);
 	}
 
 	return true;

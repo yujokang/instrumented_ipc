@@ -1,6 +1,7 @@
 *.swp
 
 *.o
+*.dwo
 *.so
 
 examples/nondeterminism_finder/nondeterminism-clang

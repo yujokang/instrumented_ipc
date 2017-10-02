@@ -103,8 +103,10 @@ compare_to(struct parent_state *state, char **new_argv, unsigned recording_max,
 				*new_node = new_nodes[node_i];
 			if (old_node != new_node) {
 				void *previous_node = new_nodes[node_i - 1];
-				printf("Diverged after %p: %p vs %p\n",
-					previous_node, old_node, new_node);
+				printf("Diverged after %p at index %u: "
+					"%p vs %p\n",
+					previous_node, node_i - 1,
+					old_node, new_node);
 				result = 1;
 				break;
 			}
