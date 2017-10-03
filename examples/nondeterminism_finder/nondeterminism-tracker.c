@@ -103,8 +103,7 @@ compare_to(struct parent_state *state, char **new_argv, unsigned recording_max,
 				*new_node = new_nodes[node_i];
 			if (old_node != new_node) {
 				void *previous_node = new_nodes[node_i - 1];
-				printf("Diverged after %p at index %u: "
-					"%p vs %p\n",
+				printf("%p (%u): %p %p\n",
 					previous_node, node_i - 1,
 					old_node, new_node);
 				result = 1;
@@ -116,7 +115,7 @@ compare_to(struct parent_state *state, char **new_argv, unsigned recording_max,
 }
 
 static int compare(char **new_argv, const char *program_list,
-			unsigned recording_max)
+			unsigned n_tries, unsigned recording_max)
 {
 	struct parent_state state;
 
@@ -139,17 +138,22 @@ static int compare(char **new_argv, const char *program_list,
 					n_old_nodes);
 				status = -1;
 			} else {
+				unsigned try_i = 0;
 				int result;
 				memcpy(old_nodes, get_nodes(&state),
 					nodes_size);
-				while ((result = compare_to(&state, new_argv,
+				while (try_i < n_tries &&
+					(result = compare_to(&state, new_argv,
 								recording_max,
 								old_nodes,
 								n_old_nodes))
 					== 0) {
+					try_i++;
 				}
 				if (result < 0) {
 					status = -1;
+				} else if (result == 0) {
+					printf("deterministic\n");
 				}
 				free(old_nodes);
 			}
@@ -159,7 +163,8 @@ static int compare(char **new_argv, const char *program_list,
 	}
 }
 
-static int track(int argc, char **argv, const char *program_list)
+static int track(int argc, char **argv, const char *program_list,
+			unsigned n_tries)
 {
 	char **new_argv = alloc_argv(argc, argv);
 	if (new_argv == NULL) {
@@ -173,7 +178,8 @@ static int track(int argc, char **argv, const char *program_list)
 		} else {
 			unsigned recording_max = (unsigned) preliminary_status;
 			printf("Found %u nodes.\n", recording_max);
-			status = compare(new_argv, program_list, recording_max);
+			status = compare(new_argv, program_list, n_tries,
+						recording_max);
 		}
 
 		free(new_argv);
@@ -183,50 +189,93 @@ static int track(int argc, char **argv, const char *program_list)
 
 #define OPTION_MARKER '-'
 #define PROGRAM_LIST_FLAG_CHAR 'p'
+#define N_TRIES_FLAG_CHAR 't'
+
+#define DEFAULT_N_TRIES 100
 
 static void print_usage(char *command)
 {
 	fprintf(stderr, "Usage: %s (%c%c optional program watch list) "
+			"(%c%c optional number of tries; default %u) "
 			"[test command] [test command arguments...]\n",
-		command, OPTION_MARKER, PROGRAM_LIST_FLAG_CHAR);
+		command, OPTION_MARKER, PROGRAM_LIST_FLAG_CHAR,
+		OPTION_MARKER, PROGRAM_LIST_FLAG_CHAR, DEFAULT_N_TRIES);
 }
 
-static int maybe_get_optional(char **argv, int argc, char **program_list_ptr)
+static long string_to_number(const char *number_str)
+{
+	long result;
+	char *end;
+
+	result = strtol(number_str, &end, 10);
+	if ((end - number_str) != strlen(number_str)) {
+		fprintf(stderr, "'%s' is not a valid number\n", number_str);
+		return -1;
+	}
+	return result;
+}
+
+static int maybe_get_optional(char **argv, int argc, char **program_list_ptr,
+				unsigned *n_tries_ptr)
 {
 	char *program_list = NULL;
+	long n_tries = DEFAULT_N_TRIES;
 	int arg_i;
 
-	*program_list_ptr = NULL;
-	for (arg_i = 1; arg_i < argc; arg_i++) {
+	for (arg_i = 1; arg_i < argc && arg_i > 0; arg_i++) {
 		char *current_arg = argv[arg_i];
 		if (current_arg[0] == OPTION_MARKER) {
 			char *option_value = argv[arg_i];
+			int need_flag = 1;
+
 			arg_i++;
 			switch (current_arg[1]) {
 			case PROGRAM_LIST_FLAG_CHAR:
-				*program_list_ptr = strdup(option_value);
+				need_flag = 0;
+				program_list = strdup(option_value);
+				break;
+			case N_TRIES_FLAG_CHAR:
+				need_flag = 0;
+				n_tries = string_to_number(option_value);
+				if (n_tries < 0) {
+					fprintf(stderr,
+						"Expected positive number, "
+						"but got %ld\n", n_tries);
+				} else {
+					n_tries = DEFAULT_N_TRIES;
+					break;
+				}
 			default:
+				if (need_flag) {
+					fprintf(stderr, "Invalid flag, '%s'\n",
+						current_arg);
+				}
 				free(program_list);
-				return -1;
+				program_list = NULL;
+				arg_i = -1;
 			}
 		} else {
 			break;
 		}
 	}
 	*program_list_ptr = program_list;
+	*n_tries_ptr = (unsigned) n_tries;
+
 	return arg_i;
 }
 
 int main(int argc, char *argv[])
 {
 	char *program_list;
+	unsigned n_tries;
 	int command_start;
 
-	command_start = maybe_get_optional(argv, argc, &program_list);
+	command_start = maybe_get_optional(argv, argc, &program_list, &n_tries);
 	if (command_start >= argc) {
 		print_usage(argv[0]);
 		return -1;
 	}
 
-	return track(argc - command_start, argv + command_start, program_list);
+	return track(argc - command_start, argv + command_start, program_list,
+			n_tries);
 }

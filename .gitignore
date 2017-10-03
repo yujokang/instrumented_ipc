@@ -8,4 +8,5 @@ examples/nondeterminism_finder/nondeterminism-clang
 examples/nondeterminism_finder/nondeterminism-clang++
 examples/nondeterminism_finder/nondeterminism-ld
 examples/nondeterminism_finder/nondeterminism-tracker
-examples/nondeterminism_finder/samples/use_random
+examples/nondeterminism_finder/samples/use_randomized
+examples/nondeterminism_finder/samples/deterministic

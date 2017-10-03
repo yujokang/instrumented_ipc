@@ -1,10 +1,12 @@
+#include "randomized.h"
+
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
 
 #define RAND_SRC "/dev/urandom"
 
-int main(void)
+int randomized()
 {
 	int random_fd = open(RAND_SRC, O_RDONLY);
 	char result;
