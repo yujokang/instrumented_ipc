@@ -15,7 +15,8 @@ def get_line(binary, address):
 		return None
 	else:
 		source_path, line_num_str = out_line.split(":")
-		return source_path, int(line_num_str)
+		pure_line_num_str = line_num_str.split()[0]
+		return source_path, int(pure_line_num_str)
 
 def get_source_name(binary, address):
 	line_result = get_line(binary, address)
@@ -27,7 +28,7 @@ def get_source_name(binary, address):
 
 DETERMINISTIC_LINE = "deterministic"
 
-def interpret_result(binary, result_lines):
+def interpret_result(binaries, result_lines):
 	if len(result_lines) == 1:
 		return []
 	result_line = result_lines[1]
@@ -37,32 +38,36 @@ def interpret_result(binary, result_lines):
 		branch, _, first, second = result_line.split()
 		source_names = []
 		for address in [branch, first, second]:
-			source_name = get_source_name(binary, address)
-			if source_name is not None:
-				source_names.append(source_name)
+			for binary in binaries:
+				source_name = get_source_name(binary, address)
+				if source_name is not None:
+					source_names.append(source_name)
 		return source_names
 
 TRACKER_PATH = join(SCRIPT_DIR, pardir + sep + "nondeterminism-tracker")
 LIST_DELIM = ","
 
-def run_test(test_args, ignores, program_list_str):
+def run_test(test_args, ignores, binary_list_str):
 	args = [TRACKER_PATH]
-	if program_list_str is not None:
+	if binary_list_str is not None:
+		binaries = binary_list_str.split(LIST_DELIM)
+		program_list = list(map(basename, binaries))
+		program_list_str = LIST_DELIM.join(program_list)
 		args += ["-p", program_list_str]
 	if len(ignores) > 0:
+		binaries = []
 		args += ["-s", LIST_DELIM.join(ignores)]
 	args += test_args
 	runner = Popen(args, stdout = PIPE, stderr = PIPE)
 	out, err = runner.communicate()
 	result_lines = out.decode().rstrip().split("\n")
-	binary = test_args[0]
-	return interpret_result(binary, result_lines)
+	return interpret_result(binaries, result_lines)
 
-def keep_trying(test_args, program_list_str):
+def keep_trying(test_args, binary_list_str):
 	ignores = set()
 	have_something = True
 	while have_something:
-		source_names = run_test(test_args, ignores, program_list_str)
+		source_names = run_test(test_args, ignores, binary_list_str)
 		if len(source_names) == 0:
 			have_something = False
 		else:
@@ -73,29 +78,30 @@ if __name__ == "__main__":
 	from sys import argv
 
 	FLAG_START = '-'
-	PROGRAM_LIST_FLAG = FLAG_START + "p"
+	BINARY_LIST_FLAG = FLAG_START + "p"
 	def print_usage():
 		print("Usage: " + argv[0] + \
 			" (-p [optional list of programs to watch]) " + \
 			"[test command and arguments...]")
 		exit(-1)
 
-	program_list_str = None
+	binary_list_str = None
 	test_arg_start = None
 	arg_i = 1
 	while arg_i < len(argv) and test_arg_start is None:
 		arg = argv[arg_i]
 		if len(arg) > 0:
 			if arg[0] == FLAG_START:
-				if arg_i == len(argv) - 1:
+				arg_i += 1
+				if arg_i >= len(argv):
 					print_usage()
-				if arg == PROGRAM_LIST_FLAG:
-					program_list_str = argv[arg_i + 1]
+				if arg == BINARY_LIST_FLAG:
+					binary_list_str = argv[arg_i]
 					
 			else:
 				test_arg_start = arg_i
 		arg_i += 1
 	if test_arg_start is None:
 		print_usage()
-	ignores = keep_trying(argv[test_arg_start : ], program_list_str)
+	ignores = keep_trying(argv[test_arg_start : ], binary_list_str)
 	print("You should ignore: %s" % (LIST_DELIM.join(ignores)))
