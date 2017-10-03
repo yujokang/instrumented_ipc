@@ -10,8 +10,8 @@ struct parent_state {
 	struct shared_basics *shared_state;
 	int null_in_fd, null_out_fd;
 	struct itimerval timeout;
-	char *should_track_env;
-	char *program_list;
+	const char *should_track_env;
+	const char *program_list;
 };
 
 int init_parent_state(struct parent_state *to_init, const char *id_env,

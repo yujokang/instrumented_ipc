@@ -79,12 +79,6 @@ inline static void reset_timeout(struct parent_state *to_reset)
 		sizeof(to_reset->timeout));
 }
 
-static int alloc_tracking_strings(const char *should_track_env,
-					const char *program_list)
-{
-	return 0;
-}
-
 inline static int cleanup_state_shmem(struct parent_state *to_cleanup)
 {
 	int status = 0;
@@ -108,9 +102,11 @@ int init_parent_state(struct parent_state *to_init, const char *id_env,
 		return -1;
 	}
 
-	if (alloc_tracking_strings(should_track_env, program_list)) {
-		cleanup_state_shmem(to_init);
-		return -1;
+	to_init->program_list = program_list;
+	if (program_list == NULL) {
+		to_init->should_track_env = NULL;
+	} else {
+		to_init->should_track_env = should_track_env;
 	}
 
 	to_init->null_in_fd = -1;
@@ -204,6 +200,14 @@ static int _start_child(struct parent_state *state, char *child_command,
 		return -1;
 	}
 	need_timeout = 0;
+
+	if (state->program_list != NULL &&
+		setenv(state->should_track_env, state->program_list, 0)) {
+		fprintf(stderr, "Could not set environment variable %s, "
+				"for program lists, to '%s'\n",
+			state->should_track_env, state->program_list);
+		return -1;
+	}
 
 	child = fork();
 	if (child < 0) {

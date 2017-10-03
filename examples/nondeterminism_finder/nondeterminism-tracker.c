@@ -58,13 +58,19 @@ static int init_nondeterminism(struct parent_state *state,
 }
 
 inline static int run_test(struct parent_state *state, char **new_argv,
+				const char *source_list,
 				unsigned recording_max)
 {
 	reset_state(state, recording_max);
+	if (source_list != NULL &&
+		setenv(NONDETERMINISM_IGNORE_ENV, source_list, 0) < 0) {
+		return -1;
+	}
 	return start_child(state, new_argv[0], new_argv, -1, -1, -1, NULL);
 }
 
-static long int preliminary(char **new_argv, const char *program_list)
+static long int preliminary(char **new_argv, const char *program_list,
+				const char *source_list)
 {
 	struct parent_state state;
 
@@ -72,7 +78,7 @@ static long int preliminary(char **new_argv, const char *program_list)
 		fprintf(stderr, "Could not initialize counting test.\n");
 		return -1;
 	} else {
-		int status = run_test(&state, new_argv, 0);
+		int status = run_test(&state, new_argv, source_list, 0);
 		unsigned n_nodes = get_n_nodes(&state);
 		destroy_parent_state(&state);
 		return status < 0 ? status : n_nodes;
@@ -86,11 +92,12 @@ get_nodes(struct parent_state *state)
 }
 
 static int
-compare_to(struct parent_state *state, char **new_argv, unsigned recording_max,
+compare_to(struct parent_state *state, char **new_argv,
+		const char *source_list, unsigned recording_max,
 		void **old_nodes, unsigned n_old_nodes)
 {
 	int result;
-	result = run_test(state, new_argv, recording_max);
+	result = run_test(state, new_argv, source_list, recording_max);
 	if (result == 0) {
 		void **new_nodes = get_nodes(state);
 		unsigned n_new_nodes = get_n_nodes(state),
@@ -115,7 +122,8 @@ compare_to(struct parent_state *state, char **new_argv, unsigned recording_max,
 }
 
 static int compare(char **new_argv, const char *program_list,
-			unsigned n_tries, unsigned recording_max)
+			unsigned n_tries, const char *source_list,
+			unsigned recording_max)
 {
 	struct parent_state state;
 
@@ -123,7 +131,8 @@ static int compare(char **new_argv, const char *program_list,
 		fprintf(stderr, "Could not initialize comparisons.\n");
 		return -1;
 	} else {
-		int status = run_test(&state, new_argv, recording_max);
+		int status = run_test(&state, new_argv, source_list,
+					recording_max);
 		if (status < 0) {
 			fprintf(stderr,
 				"Could not run child the first time.\n");
@@ -144,6 +153,7 @@ static int compare(char **new_argv, const char *program_list,
 					nodes_size);
 				while (try_i < n_tries &&
 					(result = compare_to(&state, new_argv,
+								source_list,
 								recording_max,
 								old_nodes,
 								n_old_nodes))
@@ -164,7 +174,7 @@ static int compare(char **new_argv, const char *program_list,
 }
 
 static int track(int argc, char **argv, const char *program_list,
-			unsigned n_tries)
+			unsigned n_tries, const char *source_list)
 {
 	char **new_argv = alloc_argv(argc, argv);
 	if (new_argv == NULL) {
@@ -172,14 +182,18 @@ static int track(int argc, char **argv, const char *program_list,
 	} else {
 		int status = 0;
 		long int preliminary_status = preliminary(new_argv,
-								program_list);
+								program_list,
+								source_list);
 		if (preliminary_status < 0) {
 			status = -1;
 		} else {
 			unsigned recording_max = (unsigned) preliminary_status;
-			printf("Found %u nodes.\n", recording_max);
-			status = compare(new_argv, program_list, n_tries,
-						recording_max);
+			printf("%u nodes\n", recording_max);
+			if (recording_max > 0) {
+				status = compare(new_argv, program_list,
+							n_tries, source_list,
+							recording_max);
+			}
 		}
 
 		free(new_argv);
@@ -190,6 +204,7 @@ static int track(int argc, char **argv, const char *program_list,
 #define OPTION_MARKER '-'
 #define PROGRAM_LIST_FLAG_CHAR 'p'
 #define N_TRIES_FLAG_CHAR 't'
+#define SOURCE_IGNORE_FLAG_CHAR 's'
 
 #define DEFAULT_N_TRIES 100
 
@@ -197,9 +212,11 @@ static void print_usage(char *command)
 {
 	fprintf(stderr, "Usage: %s (%c%c optional program watch list) "
 			"(%c%c optional number of tries; default %u) "
+			"(%c%c optional list of source files to ignore) "
 			"[test command] [test command arguments...]\n",
 		command, OPTION_MARKER, PROGRAM_LIST_FLAG_CHAR,
-		OPTION_MARKER, PROGRAM_LIST_FLAG_CHAR, DEFAULT_N_TRIES);
+		OPTION_MARKER, N_TRIES_FLAG_CHAR, DEFAULT_N_TRIES,
+		OPTION_MARKER, SOURCE_IGNORE_FLAG_CHAR);
 }
 
 static long string_to_number(const char *number_str)
@@ -216,50 +233,59 @@ static long string_to_number(const char *number_str)
 }
 
 static int maybe_get_optional(char **argv, int argc, char **program_list_ptr,
-				unsigned *n_tries_ptr)
+				unsigned *n_tries_ptr, char **source_list_ptr)
 {
 	char *program_list = NULL;
 	long n_tries = DEFAULT_N_TRIES;
+	char *source_list = NULL;
 	int arg_i;
 
 	for (arg_i = 1; arg_i < argc && arg_i > 0; arg_i++) {
 		char *current_arg = argv[arg_i];
 		if (current_arg[0] == OPTION_MARKER) {
-			char *option_value = argv[arg_i];
-			int need_flag = 1;
+			char *option_value = argv[++arg_i];
 
-			arg_i++;
 			switch (current_arg[1]) {
 			case PROGRAM_LIST_FLAG_CHAR:
-				need_flag = 0;
 				program_list = strdup(option_value);
+				if (program_list == NULL) {
+					arg_i = -1;
+				}
 				break;
 			case N_TRIES_FLAG_CHAR:
-				need_flag = 0;
 				n_tries = string_to_number(option_value);
 				if (n_tries < 0) {
 					fprintf(stderr,
 						"Expected positive number, "
-						"but got %ld\n", n_tries);
+						"but got %s\n", option_value);
 				} else {
 					n_tries = DEFAULT_N_TRIES;
-					break;
 				}
+				break;
+			case SOURCE_IGNORE_FLAG_CHAR:
+				source_list = strdup(option_value);
+				if (source_list == NULL) {
+					arg_i = -1;
+				}
+				break;			
 			default:
-				if (need_flag) {
-					fprintf(stderr, "Invalid flag, '%s'\n",
-						current_arg);
-				}
-				free(program_list);
-				program_list = NULL;
+				fprintf(stderr, "Invalid flag, '%s'\n",
+					current_arg);
 				arg_i = -1;
 			}
 		} else {
 			break;
 		}
 	}
+	if (arg_i < 0) {
+		free(program_list);
+		program_list = NULL;
+		free(source_list);
+		source_list = NULL;
+	}
 	*program_list_ptr = program_list;
 	*n_tries_ptr = (unsigned) n_tries;
+	*source_list_ptr = source_list;
 
 	return arg_i;
 }
@@ -268,14 +294,19 @@ int main(int argc, char *argv[])
 {
 	char *program_list;
 	unsigned n_tries;
+	char *source_list;
 	int command_start;
+	int status;
 
-	command_start = maybe_get_optional(argv, argc, &program_list, &n_tries);
-	if (command_start >= argc) {
+	command_start = maybe_get_optional(argv, argc, &program_list, &n_tries,
+						&source_list);
+	if (command_start < 0 || command_start >= argc) {
 		print_usage(argv[0]);
 		return -1;
 	}
 
-	return track(argc - command_start, argv + command_start, program_list,
-			n_tries);
+	status = track(argc - command_start, argv + command_start, program_list,
+			n_tries, source_list);
+	free(program_list);
+	return status;
 }

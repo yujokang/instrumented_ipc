@@ -5,12 +5,17 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using llvm::Module;
+using llvm::LLVMContext;
 using llvm::Type;
 using llvm::ModulePass;
 using llvm::Function;
 using llvm::checkSanitizerInterfaceFunction;
 using llvm::BasicBlock;
 using llvm::IRBuilder;
+using llvm::IntegerType;
+using llvm::PointerType;
+using llvm::StringRef;
+using llvm::Value;
 
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -23,6 +28,7 @@ static char NondeterminismPassID;
 namespace {
 	struct NondeterminismPass : public ModulePass {
 	private:
+		StringRef name;
 		Function *callback;
 		bool doInitialization(Module &module);
 		bool runOnFunction(Function &function);
@@ -37,10 +43,15 @@ namespace {
 
 bool NondeterminismPass::doInitialization(Module &module)
 {
-	Type *void_type = Type::getVoidTy(module.getContext());
+	LLVMContext &context = module.getContext();
+	Type *void_type = Type::getVoidTy(context);
+	IntegerType *char_type = IntegerType::getInt8Ty(context);
+	PointerType *string_type = PointerType::getUnqual(char_type);
+
+	name = module.getName();
 	callback = checkSanitizerInterfaceFunction(
 			module.getOrInsertFunction(CALLBACK_NAME, void_type,
-							nullptr));
+							string_type, nullptr));
 	return true;
 }
 
@@ -49,7 +60,9 @@ bool NondeterminismPass::runOnFunction(Function &function)
 	for (BasicBlock &basic_block : function) {
 		BasicBlock::iterator start = basic_block.getFirstInsertionPt();
 		IRBuilder<> block_instrumenter(&(*start));
-		block_instrumenter.CreateCall(callback, {});
+		Value *
+		name_str = block_instrumenter.CreateGlobalStringPtr(name);
+		block_instrumenter.CreateCall(callback, {name_str});
 	}
 
 	return true;

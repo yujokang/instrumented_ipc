@@ -6,6 +6,7 @@
 void init_child(volatile struct shared_basics *state, int *init_ptr,
 		const char *id_env, const char *should_track_env,
 		int (*custom_setup)(volatile struct shared_basics *state));
+int find_in_list(const char *name, const char *list_str);
 #define CREATE_SETUP(init_name, state_var, init_var, id_env, should_track_env, \
 			custom_setup) \
 static volatile struct shared_basics state_var; \

@@ -10,3 +10,5 @@ examples/nondeterminism_finder/nondeterminism-ld
 examples/nondeterminism_finder/nondeterminism-tracker
 examples/nondeterminism_finder/samples/use_randomized
 examples/nondeterminism_finder/samples/deterministic
+
+*__pycache__

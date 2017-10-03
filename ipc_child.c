@@ -36,12 +36,31 @@ static char *get_program_name(char *program_path)
 	return name;
 }
 
-static inline int is_end(char *list_str, unsigned list_i)
+static inline int is_end(const char *list_str, unsigned list_i)
 {
 	char list_char = list_str[list_i];
 
 	return list_char == PROGRAM_LIST_DELIM ||
 		list_char == '\0';
+}
+
+int find_in_list(const char *name, const char *list_str)
+{
+	int matched = 0;
+	unsigned list_len = strlen(list_str), name_i = 0, list_i;
+	for (list_i = 0; list_i < list_len + 1 && !matched; list_i++) {
+		if (is_end(list_str, list_i) && name[name_i] == '\0') {
+			matched = 1;
+		} else if (list_str[list_i] != name[name_i]) {
+			while (!is_end(list_str, list_i)) {
+				list_i++;
+			}
+			name_i = 0;
+		} else {
+			name_i++;
+		}
+	}
+	return matched;
 }
 
 static int should_track_this_program(const char *should_track_env)
@@ -52,29 +71,9 @@ static int should_track_this_program(const char *should_track_env)
 	} else {
 		char *program_path = get_program_path(),
 			*program_name = get_program_name(program_path);
-		int program_matched = 0;
-		if (program_name != NULL) {
-			unsigned list_len = strlen(program_list), name_i = 0,
-				list_i;
-			for (list_i = 0; list_i < list_len + 1 &&
-					!program_matched;
-				list_i++) {
-				if (is_end(program_list, list_i) &&
-						program_name[name_i] == '\0') {
-					program_matched = 1;
-				} else if (program_list[list_i] !=
-						program_name[name_i]) {
-					while (!is_end(program_list, list_i)) {
-						list_i++;
-					}
-					name_i = 0;
-				} else {
-					name_i++;
-				}
-			}
-			free(program_path);
-		}
-		return program_matched;
+		int should_track = find_in_list(program_name, program_list);
+		free(program_path);
+		return should_track;
 	}
 }
 
