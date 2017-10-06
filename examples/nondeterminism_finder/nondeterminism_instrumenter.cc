@@ -28,7 +28,6 @@ static char NondeterminismPassID;
 namespace {
 	struct NondeterminismPass : public ModulePass {
 	private:
-		StringRef name;
 		Function *callback;
 		bool doInitialization(Module &module);
 		bool runOnFunction(Function &function);
@@ -48,7 +47,6 @@ bool NondeterminismPass::doInitialization(Module &module)
 	IntegerType *char_type = IntegerType::getInt8Ty(context);
 	PointerType *string_type = PointerType::getUnqual(char_type);
 
-	name = module.getName();
 	callback = checkSanitizerInterfaceFunction(
 			module.getOrInsertFunction(CALLBACK_NAME, void_type,
 							string_type, nullptr));
@@ -57,6 +55,7 @@ bool NondeterminismPass::doInitialization(Module &module)
 
 bool NondeterminismPass::runOnFunction(Function &function)
 {
+	StringRef name = function.getName();
 	for (BasicBlock &basic_block : function) {
 		BasicBlock::iterator start = basic_block.getFirstInsertionPt();
 		IRBuilder<> block_instrumenter(&(*start));

@@ -28,7 +28,7 @@ CREATE_SETUP(__init_nondeterminism, shared_state, initialized,
 		NONDETERMINISM_ID_ENV, NONDETERMINISM_SHOULD_TRACK_ENV,
 		__nondeterminism_extra_setup)
 
-static int should_ignore_file(const char *name)
+static int should_ignore(const char *name)
 {
 	if (ignored == NULL) {
 		return 0;
@@ -41,7 +41,7 @@ void __nondeterminism_record_node(const char *name)
 {
 	unsigned current_node_i;
 
-	if (state_body == NULL || should_ignore_file(name)) {
+	if (state_body == NULL || should_ignore(name)) {
 		return;
 	}
 	shared_state.current_process = getpid();
