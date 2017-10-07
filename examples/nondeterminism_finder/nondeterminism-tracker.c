@@ -49,7 +49,7 @@ static int init_nondeterminism(struct parent_state *state,
 					NONDETERMINISM_SHOULD_TRACK_ENV,
 					program_list,
 					sizeof(struct nondeterminism_state) +
-						sizeof(void *) *
+						sizeof(struct run_node) *
 						recording_max);
 	if (status < 0) {
 		return -1;
@@ -85,34 +85,41 @@ static long int preliminary(char **new_argv, const char *program_list,
 	}
 }
 
-inline static void **
+inline static volatile struct run_node *
 get_nodes(struct parent_state *state)
 {
-	return (void **) get_state_body(state)->nodes;
+	return get_state_body(state)->nodes;
 }
+
+#define NODE_FORMAT "%p/%p"
+#define NODE_ARGS(node) node->location, node->name
 
 static int
 compare_to(struct parent_state *state, char **new_argv,
 		const char *ignore_list, unsigned recording_max,
-		void **old_nodes, unsigned n_old_nodes)
+		struct run_node *old_nodes, unsigned n_old_nodes)
 {
 	int result;
 	result = run_test(state, new_argv, ignore_list, recording_max);
 	if (result == 0) {
-		void **new_nodes = get_nodes(state);
+		struct run_node *
+		new_nodes = (struct run_node *) get_nodes(state);
 		unsigned n_new_nodes = get_n_nodes(state),
 			min_n_nodes = n_new_nodes < n_old_nodes ?
 					n_new_nodes : n_old_nodes;
 		unsigned node_i;
 
 		for (node_i = 1; node_i < min_n_nodes; node_i++) {
-			void *old_node = old_nodes[node_i],
-				*new_node = new_nodes[node_i];
-			if (old_node != new_node) {
-				void *previous_node = new_nodes[node_i - 1];
-				printf("%p (%u): %p %p\n",
-					previous_node, node_i - 1,
-					old_node, new_node);
+			struct run_node *old_node = &old_nodes[node_i];
+			struct run_node *new_node = &new_nodes[node_i];
+			if (old_node->location != new_node->location) {
+				struct run_node *
+				previous_node = &old_nodes[node_i - 1];
+				printf(NODE_FORMAT " (%u): " NODE_FORMAT " "
+					NODE_FORMAT "\n",
+					NODE_ARGS(previous_node), node_i - 1,
+					NODE_ARGS(old_node),
+					NODE_ARGS(new_node));
 				result = 1;
 				break;
 			}
@@ -138,8 +145,9 @@ static int compare(char **new_argv, const char *program_list,
 				"Could not run child the first time.\n");
 		} else {
 			unsigned n_old_nodes = get_n_nodes(&state);
-			size_t nodes_size = sizeof(void *) * n_old_nodes;
-			void **old_nodes = malloc(nodes_size);
+			size_t
+			nodes_size = sizeof(struct run_node) * n_old_nodes;
+			struct run_node *old_nodes = malloc(nodes_size);
 
 			if (old_nodes == NULL) {
 				fprintf(stderr, "Could not allocate space for "
@@ -149,7 +157,8 @@ static int compare(char **new_argv, const char *program_list,
 			} else {
 				unsigned try_i = 0;
 				int result;
-				memcpy(old_nodes, get_nodes(&state),
+				memcpy(old_nodes,
+					(struct run_node *) get_nodes(&state),
 					nodes_size);
 				while (try_i < n_tries &&
 					(result = compare_to(&state, new_argv,

@@ -46,7 +46,7 @@ void __nondeterminism_check_node(const char *name, int *have_status_ptr,
 	}
 }
 
-void __nondeterminism_record_node(int ignore_status)
+void __nondeterminism_record_node(int ignore_status, const char *name)
 {
 	unsigned current_node_i;
 
@@ -57,7 +57,10 @@ void __nondeterminism_record_node(int ignore_status)
 
 	current_node_i = state_body->node_i;
 	if (current_node_i < state_body->recording_max) {
-		state_body->nodes[current_node_i] = __builtin_return_address(0);
+		volatile struct run_node *
+		current_node = &state_body->nodes[current_node_i];
+		current_node->location = __builtin_return_address(0);
+		current_node->name = name;
 	}
 	state_body->node_i = current_node_i + 1;
 }

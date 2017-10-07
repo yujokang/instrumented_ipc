@@ -1,0 +1,2 @@
+Dependencies:
+	pyelftools: sudo apt-get install python3-pyelftools

@@ -1,39 +1,76 @@
 from subprocess import Popen, PIPE
 from os import pardir, sep
 from os.path import basename, dirname, abspath, join
+from elftools.elf.elffile import ELFFile, StringTableSection
 
 SCRIPT_DIR = dirname(abspath(__file__))
 
 UNKNOWN_MARKER = "??"
 
-def maybe_get_location(original):
-	if UNKNOWN_MARKER in original:
-		return None
-	return original
+def get_addr(section):
+	return section.header["sh_addr"]
+def get_size(section):
+	return section.header["sh_size"]
 
-FUNCTION_LINE_NUMBER = 0
-SOURCE_LINE_NUMBER = 1
-
-def get_source(binary, address):
-	finder = Popen(["addr2line", "-e", binary, "-f", address], stdout = PIPE,
-			stderr = PIPE)
-	out, err = finder.communicate()
-	out_lines = out.decode().rstrip().split("\n")
-	function_name = maybe_get_location(out_lines[FUNCTION_LINE_NUMBER])
-	source_path, line_num_str = \
-		map(maybe_get_location,
-			out_lines[SOURCE_LINE_NUMBER].split(":"))
-	if line_num_str is None:
-		line_num = None
-	else:
-		line_num = int(line_num_str.split()[0])
-	return function_name, source_path, line_num
-
-def get_function(binary, address):
-	function_name, source_path, line_num  = get_source(binary, address)
-	return function_name
+class LocationSearcher:
+	__binary_path = None
+	__binary_file = None
+	__sections = None
+	def __init__(self, binary_path):
+		self.__binary_path = binary_path
+		self.__binary_file = open(binary_path, "rb")
+		elf = ELFFile(self.__binary_file)
+		self.__sections = []
+		for section in elf.iter_sections():
+			addr = get_addr(section)
+			size = get_size(section)
+			end = addr + size
+			self.__sections.append((addr, end, section))
+		self.__sections.sort()
+	def __impossible(self, address):
+		finder = Popen(["addr2line", "-e", self.__binary_path,
+				str(address)],
+				stdout = PIPE, stderr = PIPE)
+		out, err = finder.communicate()
+		out_lines = out.decode().rstrip().split(":")
+		for out_line in out_lines:
+			if not out_line.startswith(UNKNOWN_MARKER):
+				return False
+		return True
+	def __find_string(self, name_location, start, end):
+		if start >= end:
+			return None
+		middle = (start + end) // 2
+		middle_value = self.__sections[middle]
+		middle_start, middle_end, middle_section = middle_value
+		if name_location < middle_start:
+			return self.__find_string(name_location, start, middle)
+		elif name_location >= middle_end:
+			return self.__find_string(name_location, middle + 1,
+							end)
+		else:
+			offset = name_location - middle_start
+			if isinstance(middle_section, StringTableSection):
+				raw_name = middle_section.get_string(offset)
+				return raw_name.decode()
+			else:
+				running_name = ""
+				data = middle_section.data()
+				for raw_byte in data[offset :]:
+					if raw_byte == 0:
+						return running_name
+					else:
+						running_name += chr(raw_byte)
+	def find_string(self, address, name_location):
+		if self.__impossible(address):
+			return None
+		return self.__find_string(name_location, 0,
+						len(self.__sections))
+	def close(self):
+		self.__binary_file.close()
 
 DETERMINISTIC_LINE = "deterministic"
+PAIR_DIV = "/"
 
 def interpret_result(binaries, result_lines):
 	if len(result_lines) == 1:
@@ -42,27 +79,26 @@ def interpret_result(binaries, result_lines):
 	if result_line == DETERMINISTIC_LINE:
 		return []
 	else:
-		branch, _, first, second = result_line.split()
-		functions = []
-		for address in [branch, first, second]:
+		branch_pair, _, first_pair, second_pair = result_line.split()
+		names = []
+		for pair in [branch_pair, first_pair, second_pair]:
+			address, name_location = map(lambda hex_str:
+							int(hex_str, 0x10),
+							pair.split(PAIR_DIV))
 			for binary in binaries:
-				function = get_function(binary, address)
-				if function is not None:
-					functions.append(function)
-		return functions
+				name = binary.find_string(address,
+								name_location)
+				if name is not None:
+					names.append(name)
+		return names
 
 TRACKER_PATH = join(SCRIPT_DIR, pardir + sep + "nondeterminism-tracker")
 LIST_DELIM = ","
 
-def run_test(test_args, ignores, binary_list_str):
+def run_test(test_args, ignores, program_list_str, binaries):
 	args = [TRACKER_PATH]
-	if binary_list_str is not None:
-		binaries = binary_list_str.split(LIST_DELIM)
-		program_list = list(map(basename, binaries))
-		program_list_str = LIST_DELIM.join(program_list)
+	if program_list_str is not None:
 		args += ["-p", program_list_str]
-	else:
-		binaries = [test_args[0]]
 	if len(ignores) > 0:
 		args += ["-i", LIST_DELIM.join(ignores)]
 	args += test_args
@@ -76,8 +112,17 @@ def run_test(test_args, ignores, binary_list_str):
 def keep_trying(test_args, binary_list_str):
 	ignores = set()
 	have_something = True
+	if binary_list_str is not None:
+		binary_paths = binary_list_str.split(LIST_DELIM)
+		program_list = list(map(basename, binary_paths))
+		program_list_str = LIST_DELIM.join(program_list)
+	else:
+		binary_paths = [test_args[0]]
+		program_list_str = None
+	binaries = list(map(LocationSearcher, binary_paths))
 	while have_something:
-		functions = run_test(test_args, ignores, binary_list_str)
+		functions = run_test(test_args, ignores, program_list_str,
+					binaries)
 		if len(functions) == 0:
 			have_something = False
 		else:
@@ -85,6 +130,8 @@ def keep_trying(test_args, binary_list_str):
 				if function in ignores:
 					print("Already have %s" % (function))
 			ignores.update(functions)
+	for binary in binaries:
+		binary.close()
 	return ignores
 
 if __name__ == "__main__":

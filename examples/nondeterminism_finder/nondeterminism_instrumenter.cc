@@ -37,6 +37,7 @@ namespace {
 		IntegerType *status_type;
 		PointerType *status_ptr_type;
 		Constant *false_init;
+		StringRef name;
 		bool doInitialization(Module &module);
 		bool runPerFunction(Function &function, Module &module);
 	public:
@@ -70,13 +71,13 @@ bool NondeterminismPass::doInitialization(Module &module)
 							string_type,
 							status_type,
 							nullptr));
+	name = module.getName();
 	return true;
 }
 
 bool NondeterminismPass::runPerFunction(Function &function, Module &module)
 {
 	bool need_check = true;
-	StringRef name = function.getName();
 	GlobalVariable *
 	checked_var = new GlobalVariable(module, status_type, false,
 				GlobalValue::InternalLinkage,
@@ -101,7 +102,7 @@ bool NondeterminismPass::runPerFunction(Function &function, Module &module)
 			need_check = false;
 		}
 		result = block_instrumenter.CreateLoad(result_var);
-		block_instrumenter.CreateCall(callback, {result});
+		block_instrumenter.CreateCall(callback, {result, name_str});
 	}
 
 	return true;
