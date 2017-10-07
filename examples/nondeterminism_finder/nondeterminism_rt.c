@@ -37,11 +37,20 @@ static int should_ignore(const char *name)
 	return find_in_list(name, ignored);
 }
 
-void __nondeterminism_record_node(const char *name)
+void __nondeterminism_check_node(const char *name, int *have_status_ptr,
+					int *ignore_status_ptr)
+{
+	if (!(*have_status_ptr)) {
+		*have_status_ptr = 1;
+		*ignore_status_ptr = should_ignore(name);
+	}
+}
+
+void __nondeterminism_record_node(int ignore_status)
 {
 	unsigned current_node_i;
 
-	if (state_body == NULL || should_ignore(name)) {
+	if (state_body == NULL || ignore_status) {
 		return;
 	}
 	shared_state.current_process = getpid();

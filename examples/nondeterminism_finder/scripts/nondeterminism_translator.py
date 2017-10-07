@@ -81,6 +81,9 @@ def keep_trying(test_args, binary_list_str):
 		if len(functions) == 0:
 			have_something = False
 		else:
+			for function in functions:
+				if function in ignores:
+					print("Already have %s" % (function))
 			ignores.update(functions)
 	return ignores
 
