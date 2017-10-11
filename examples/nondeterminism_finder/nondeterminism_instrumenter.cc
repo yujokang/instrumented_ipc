@@ -18,6 +18,7 @@ using llvm::StringRef;
 using llvm::Value;
 using llvm::ConstantInt;
 using llvm::Constant;
+using llvm::ConstantPointerNull;
 using llvm::GlobalValue;
 using llvm::GlobalVariable;
 using llvm::LoadInst;
@@ -35,9 +36,9 @@ namespace {
 	private:
 		Function *checker, *callback;
 		IntegerType *status_type;
-		PointerType *status_ptr_type;
-		Constant *false_init;
-		StringRef name;
+		PointerType *need_check_type, *status_ptr_type;
+		ConstantPointerNull *known_name_init;
+		Constant *ignore_init;
 		bool doInitialization(Module &module);
 		bool runPerFunction(Function &function, Module &module);
 	public:
@@ -57,37 +58,41 @@ bool NondeterminismPass::doInitialization(Module &module)
 	IntegerType *char_type = IntegerType::getInt8Ty(context);
 	PointerType *string_type = PointerType::getUnqual(char_type);
 
+	need_check_type = PointerType::getUnqual(string_type);
+	known_name_init = ConstantPointerNull::get(string_type);
+
 	status_type = IntegerType::getInt32Ty(context);
 	status_ptr_type = PointerType::getUnqual(status_type);
-	false_init = ConstantInt::getFalse(status_type);
+	ignore_init = ConstantInt::getFalse(status_type);
 	checker = checkSanitizerInterfaceFunction(
 			module.getOrInsertFunction(CHECKER_NAME, void_type,
 							string_type,
-							status_ptr_type,
+							need_check_type,
 							status_ptr_type,
 							nullptr));
 	callback = checkSanitizerInterfaceFunction(
 			module.getOrInsertFunction(CALLBACK_NAME, void_type,
-							string_type,
 							status_type,
+							string_type,
 							nullptr));
-	name = module.getName();
 	return true;
 }
 
 bool NondeterminismPass::runPerFunction(Function &function, Module &module)
 {
-	bool need_check = true;
+	bool need_check_code = true;
+	StringRef name = function.getName();
 	GlobalVariable *
-	checked_var = new GlobalVariable(module, status_type, false,
-				GlobalValue::InternalLinkage,
-				0, "__nondeterminism_checked_" + name),
+	need_check_var = new GlobalVariable(module, need_check_type, false,
+						GlobalValue::InternalLinkage,
+						0, "__nondeterminism_checked_" +
+							name),
 	*result_var = new GlobalVariable(module, status_type, false,
 					GlobalValue::InternalLinkage,
 					0, "__nondeterminism_ignore_" + name);
 
-	checked_var->setInitializer(false_init);
-	result_var->setInitializer(false_init);
+	need_check_var->setInitializer(known_name_init);
+	result_var->setInitializer(ignore_init);
 	for (BasicBlock &basic_block : function) {
 		BasicBlock::iterator start = basic_block.getFirstInsertionPt();
 		IRBuilder<> block_instrumenter(&(*start));
@@ -95,11 +100,12 @@ bool NondeterminismPass::runPerFunction(Function &function, Module &module)
 		name_str = block_instrumenter.CreateGlobalStringPtr(name);
 		LoadInst *result;
 
-		if (need_check) {
+		if (need_check_code) {
 			block_instrumenter.CreateCall(checker,
-							{name_str, checked_var,
+							{name_str,
+								need_check_var,
 								result_var});
-			need_check = false;
+			need_check_code = false;
 		}
 		result = block_instrumenter.CreateLoad(result_var);
 		block_instrumenter.CreateCall(callback, {result, name_str});

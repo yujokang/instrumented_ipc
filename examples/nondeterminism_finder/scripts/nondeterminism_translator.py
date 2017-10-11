@@ -102,11 +102,9 @@ def run_test(test_args, ignores, program_list_str, binaries):
 	if len(ignores) > 0:
 		args += ["-i", LIST_DELIM.join(ignores)]
 	args += test_args
-	print(" ".join(args))
 	runner = Popen(args, stdout = PIPE, stderr = PIPE)
 	out, err = runner.communicate()
 	result_lines = out.decode().rstrip().split("\n")
-	print(result_lines)
 	return interpret_result(binaries, result_lines)
 
 def keep_trying(test_args, binary_list_str):
@@ -128,7 +126,8 @@ def keep_trying(test_args, binary_list_str):
 		else:
 			for function in functions:
 				if function in ignores:
-					print("Already have %s" % (function))
+					print("Could not ignore %s" %
+						(function))
 			ignores.update(functions)
 	for binary in binaries:
 		binary.close()

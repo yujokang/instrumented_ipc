@@ -9,7 +9,7 @@ DIR_TARGETS=$(SAMPLES_DIR)
 TARGETS=$(ORIGINAL_TARGETS) $(DIR_TARGETS)
 all: $(TARGETS)
 
-nondeterminism-tracker.o: nondeterminism-tracker.c
+%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ -I$(LIB_DIR) $<
 nondeterminism-tracker: nondeterminism-tracker.o
 	$(CC) $(LDFLAGS) -o $@ $< $(LIB_DIR)ipc_parent.o

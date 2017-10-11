@@ -37,11 +37,11 @@ static int should_ignore(const char *name)
 	return find_in_list(name, ignored);
 }
 
-void __nondeterminism_check_node(const char *name, int *have_status_ptr,
+void __nondeterminism_check_node(const char *name, const char **known_name,
 					int *ignore_status_ptr)
 {
-	if (!(*have_status_ptr)) {
-		*have_status_ptr = 1;
+	if (ignored != NULL && *known_name != name) {
+		*known_name = name;
 		*ignore_status_ptr = should_ignore(name);
 	}
 }
