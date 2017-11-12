@@ -3,7 +3,11 @@
 #include <stdlib.h>
 
 static char *objs[] = {MACRO_TO_STRING(RT_OBJ),
+#ifdef CHILD_OBJ
 				MACRO_TO_STRING(CHILD_OBJ)};
+#else
+			};
+#endif /* CHILD_OBJ */
 
 void append_objs(char **argv, int start)
 {
